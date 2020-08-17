@@ -1,7 +1,6 @@
 ﻿using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
-using System.Collections;
 using System.Linq;
 using Transmission.API.RPC.Entity;
 using Transmission.API.RPC.Arguments;
@@ -12,12 +11,32 @@ namespace Transmission.API.RPC.Test
     public class MethodsTest
     {
         const string FILE_PATH = "./Data/ubuntu-10.04.4-server-amd64.iso.torrent";
-        const string HOST = "http://192.168.1.50:9091/transmission/rpc";
+        // const string HOST = "http://192.168.1.1:9091/transmission/rpc";
         const string SESSION_ID = "";
 
-        Client client = new Client(HOST, SESSION_ID);
+        private Client client;
 
-        #region Torrent Test
+        [TestInitialize]
+        public void Before()
+        {
+            if (Environment.GetEnvironmentVariable("transmission.host") == null)
+            {
+                throw new Exception("Parameter 'transmission.host' is not set.");
+            }
+
+            if (Environment.GetEnvironmentVariable("transmission.login") == null)
+            {
+                throw new Exception("Parameter 'transmission.login' is not set.");
+            }
+
+            Console.WriteLine($"transmission.host={Environment.GetEnvironmentVariable("transmission.host")}");
+
+            client = new Client(
+                Environment.GetEnvironmentVariable("transmission.host"),
+                SESSION_ID,
+                Environment.GetEnvironmentVariable("transmission.login"),
+                Environment.GetEnvironmentVariable("transmission.password"));
+        }
 
         [TestMethod]
         public void AddTorrent_Test()
@@ -41,13 +60,23 @@ namespace Transmission.API.RPC.Test
                 Paused = true
             };
 
-            var newTorrentInfo = client.TorrentAdd(torrent);
-			
-			Assert.IsNotNull(newTorrentInfo);
-			Assert.IsTrue(newTorrentInfo.ID != 0);
+            try
+            {
+                var newTorrentInfo = client.TorrentAdd(torrent);
+                Assert.IsNotNull(newTorrentInfo);
+                Assert.IsTrue(newTorrentInfo.ID != 0);
+            }
+            catch (Exception e)
+            {
+                if (!e.Message.Contains("duplicate torrent"))
+                {
+                    throw;
+                }
+            }
         }
 
-        [TestMethod]
+        // Unignore and run manually when required
+        [TestMethod, Ignore]
         public void AddTorrent_Magnet_Test()
         {
             var torrent = new NewTorrent
@@ -69,14 +98,14 @@ namespace Transmission.API.RPC.Test
 
 			Assert.IsNotNull(torrentsInfo);
 			Assert.IsNotNull(torrentsInfo.Torrents);
-			Assert.IsTrue(torrentsInfo.Torrents.Any());
+			Assert.IsTrue(torrentsInfo.Torrents.Any(x => x.Name.Contains("ubuntu")));
 		}
 
 		[TestMethod]
 		public void SetTorrentSettings_Test()
 		{
 			var torrentsInfo = client.TorrentGet(TorrentFields.ALL_FIELDS);
-			var torrentInfo = torrentsInfo.Torrents.FirstOrDefault();
+			var torrentInfo = torrentsInfo.Torrents.FirstOrDefault(x => x.Name.Contains("ubuntu"));
 			Assert.IsNotNull(torrentInfo, "Torrent not found");
 
 			var trackerInfo = torrentInfo.Trackers.FirstOrDefault();
@@ -91,12 +120,13 @@ namespace Transmission.API.RPC.Test
 			client.TorrentSet(settings);
 
 			torrentsInfo = client.TorrentGet(TorrentFields.ALL_FIELDS, torrentInfo.ID);
-			torrentInfo = torrentsInfo.Torrents.FirstOrDefault();
+			torrentInfo = torrentsInfo.Torrents.FirstOrDefault(x => x.Name.Contains("ubuntu"));
 
 			Assert.IsFalse(trackerCount == torrentInfo.Trackers.Length);
 		}
 
-        [TestMethod]
+        // Is not supported by the old version of transmission on WD MyBookLive
+        [TestMethod, Ignore]
         public void RenamePathTorrent_Test()
         {
             var torrentsInfo = client.TorrentGet(TorrentFields.ALL_FIELDS);
@@ -113,7 +143,7 @@ namespace Transmission.API.RPC.Test
 		public void RemoveTorrent_Test()
 		{
 			var torrentsInfo = client.TorrentGet(TorrentFields.ALL_FIELDS);
-			var torrentInfo = torrentsInfo.Torrents.FirstOrDefault();
+			var torrentInfo = torrentsInfo.Torrents.FirstOrDefault(x => x.Name.Contains("ubuntu"));
 			Assert.IsNotNull(torrentInfo, "Torrent not found");
 
 			client.TorrentRemove(new int[] { torrentInfo.ID });
@@ -122,10 +152,6 @@ namespace Transmission.API.RPC.Test
 
 			Assert.IsFalse(torrentsInfo.Torrents.Any(t => t.ID == torrentInfo.ID));
 		}
-
-        #endregion
-
-        #region Session Test
 
 		[TestMethod]
 		public void SessionGetTest()
@@ -159,7 +185,5 @@ namespace Transmission.API.RPC.Test
             //Set new session settinhs
             client.SetSessionSettings(new SessionSettings() { SpeedLimitUp = oldSpeedLimit });
         }
-
-        #endregion
     }
 }
